@@ -212,7 +212,7 @@ root.resizable(True, True)
 tk.Label(root, text="URL:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=10)
 url_entry = tk.Entry(root, width=50)
 url_entry.grid(row=0, column=1, padx=10, pady=10)
-url_entry.insert(0, "https://sasqnet.com")  # Default URL
+url_entry.insert(0, "https://www.sasqnet.com")  # Default URL
 
 tk.Label(root, text="HTML Tags (comma-separated):").grid(row=1, column=0, sticky=tk.W, padx=10, pady=10)
 tags_entry = tk.Entry(root, width=50)
