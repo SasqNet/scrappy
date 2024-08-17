@@ -48,7 +48,7 @@ This is a Python-based advanced web scraping application with a graphical user i
 ## Usage
 
 1. **Enter URL:**  
-   - The default URL is set to `https://sasqnet.com`. You can change it to any valid URL.
+   - The default URL is set to `https://www.sasqnet.com`. You can change it to any valid URL.
    
 2. **Specify HTML Tags and Classes:**  
    - Enter the HTML tags and classes you want to scrape, separated by commas.
