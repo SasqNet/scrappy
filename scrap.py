@@ -205,7 +205,7 @@ def clear_results():
 # Initialize Tkinter
 root = tk.Tk()
 root.title("Advanced Web Scraper")
-root.geometry("1200x600")
+root.geometry("1000x700")
 root.resizable(True, True)
 
 # Create and place widgets
@@ -255,16 +255,16 @@ export_json_button.grid(row=8, column=1, pady=10)
 tree = ttk.Treeview(root, columns=("URL", "Content"), show="headings", selectmode="extended")
 tree.heading("URL", text="URL")
 tree.heading("Content", text="Scraped Content")
-tree.column("URL", width=500, anchor=tk.W)
-tree.column("Content", width=500, anchor=tk.W)
-tree.grid(row=9, column=0, padx=10, pady=10, sticky='nsew')
-
-# Verbose output
-verbose_output = tk.Text(root, height=15, wrap=tk.WORD)
-verbose_output.grid(row=9, column=1, padx=10, pady=10, sticky='nsew')
+tree.column("URL", width=300, anchor=tk.W)
+tree.column("Content", width=300, anchor=tk.W)
+tree.grid(row=9, column=0, columnspan=2, padx=10, pady=10, sticky='nsew')
 
 # Enable selection and copying from Treeview
 tree.bind("<Control-c>", copy_to_clipboard)
+
+# Verbose output
+verbose_output = tk.Text(root, height=10, wrap=tk.WORD)
+verbose_output.grid(row=10, column=0, columnspan=2, padx=10, pady=10, sticky='nsew')
 
 # Add scrollbars
 scrollbar_y = ttk.Scrollbar(root, orient="vertical", command=tree.yview)
@@ -272,17 +272,11 @@ scrollbar_y.grid(row=9, column=2, sticky='ns')
 tree.configure(yscrollcommand=scrollbar_y.set)
 
 scrollbar_x = ttk.Scrollbar(root, orient="horizontal", command=tree.xview)
-scrollbar_x.grid(row=10, column=0, sticky='ew', columnspan=2)
+scrollbar_x.grid(row=11, column=0, columnspan=2, sticky='ew')
 tree.configure(xscrollcommand=scrollbar_x.set)
-
-# Scrollbar for verbose output
-scrollbar_verbose = ttk.Scrollbar(root, orient="vertical", command=verbose_output.yview)
-scrollbar_verbose.grid(row=9, column=3, sticky='ns')
-verbose_output.configure(yscrollcommand=scrollbar_verbose.set)
 
 # Configure grid weights for resizing
 root.grid_rowconfigure(9, weight=1)
-root.grid_columnconfigure(0, weight=1)
 root.grid_columnconfigure(1, weight=1)
 
 # Run the application
