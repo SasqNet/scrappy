@@ -161,7 +161,8 @@ def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
     base_domain = urlparse(url).netloc
     visited = set()
     to_visit = set([normalize_url(url)])
-    all_data = []
+    all_links = set()  # This will store all the links found during crawling
+    all_data = []  # This will store all the data scraped if crawl_links_only is False
     total_pages = len(to_visit)  # Initial number of pages to visit
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
@@ -173,21 +174,20 @@ def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
 
             response = None  # Ensure response is defined
             try:
+                response = requests.get(current_url, headers=HEADERS, timeout=10)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
                 if crawl_links_only:
-                    response = requests.get(current_url, headers=HEADERS, timeout=10)
-                    response.raise_for_status()
-                    soup = BeautifulSoup(response.content, 'html.parser')
                     new_links = get_internal_links(current_url, soup, base_domain)
+                    all_links.update(new_links)
                     to_visit.update(new_links)
                 else:
                     page_data = scrape_page(current_url, tags, classes, attribute, rp)
                     all_data.extend(page_data)
-                    response = requests.get(current_url, headers=HEADERS, timeout=10)
-                    response.raise_for_status()
-                    soup = BeautifulSoup(response.content, 'html.parser')
                     new_links = get_internal_links(current_url, soup, base_domain)
                     to_visit.update(new_links)
-                    
+                
                 # Update progress bar and statistics
                 total_pages += len(new_links)
                 progress = len(visited) / total_pages * 100
@@ -200,7 +200,7 @@ def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
                 if response is not None:
                     response.close()  # Ensure response is closed only if it was initialized
 
-    return all_data
+    return all_links if crawl_links_only else all_data
 
 def scrape_data():
     stop_scan_flag.clear()  # Reset the flag when starting a new scan
@@ -220,6 +220,7 @@ def _scrape_data_thread():
     rp = load_robots_var.get() == 1 and load_robots_txt(url) or None
     
     start_time = time.time()  # Start timing the crawl
+    all_data = []  # Initialize all_data to store results
 
     if crawl_option.get() == 1:  # Crawl entire site
         if crawl_links_only:
@@ -236,10 +237,12 @@ def _scrape_data_thread():
     elapsed_time = end_time - start_time
 
     # Update stats
-    stats_label.config(text=f"Pages crawled: {len(all_data)} | Time taken: {elapsed_time:.2f} seconds")
+    stats_label.config(text=f"Pages crawled: {len(all_data) if not crawl_links_only else len(all_links)} | Time taken: {elapsed_time:.2f} seconds")
 
     # Flash the PayPal button 10 times when done
     flash_paypal_button()
+
+
 
 def display_data(data):
     if not data:
