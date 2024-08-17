@@ -62,12 +62,12 @@ def load_robots_txt(url):
     rp.set_url(robots_url)
     try:
         rp.read()
-        verbose_output.insert(tk.END, f"Loaded robots.txt from {robots_url}\n")
-        verbose_output.see(tk.END)
+        root.after(0, lambda: verbose_output.insert(tk.END, f"Loaded robots.txt from {robots_url}\n"))
+        root.after(0, verbose_output.see, tk.END)
         logging.info(f"Loaded robots.txt from {robots_url}")
     except Exception as e:
-        verbose_output.insert(tk.END, f"Failed to load robots.txt: {e}\n")
-        verbose_output.see(tk.END)
+        root.after(0, lambda: verbose_output.insert(tk.END, f"Failed to load robots.txt: {e}\n"))
+        root.after(0, verbose_output.see, tk.END)
         logging.warning(f"Failed to load robots.txt: {e}")
         rp = None
     return rp
@@ -86,8 +86,8 @@ def scrape_page(url, tags, classes, attribute, rp):
         response = requests.get(url, headers=HEADERS, timeout=10)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        verbose_output.insert(tk.END, f"Failed to retrieve {url}: {e}\n")
-        verbose_output.see(tk.END)
+        root.after(0, lambda: verbose_output.insert(tk.END, f"Failed to retrieve {url}: {e}\n"))
+        root.after(0, verbose_output.see, tk.END)
         logging.error(f"Failed to retrieve {url}: {e}")
         return []
 
@@ -132,6 +132,8 @@ def scrape_page(url, tags, classes, attribute, rp):
                         if attr_value:
                             data.append({'URL': url, 'Content': attr_value})
 
+        root.after(0, lambda: verbose_output.insert(tk.END, f"Scraped data from {url}\n"))
+        root.after(0, verbose_output.see, tk.END)
         return data
 
     finally:
@@ -182,11 +184,15 @@ def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
                     new_links = get_internal_links(current_url, soup, base_domain)
                     all_links.update(new_links)
                     to_visit.update(new_links)
+                    root.after(0, lambda: verbose_output.insert(tk.END, f"Found links on {current_url}\n"))
+                    root.after(0, verbose_output.see, tk.END)
                 else:
                     page_data = scrape_page(current_url, tags, classes, attribute, rp)
                     all_data.extend(page_data)
                     new_links = get_internal_links(current_url, soup, base_domain)
                     to_visit.update(new_links)
+                    root.after(0, lambda: verbose_output.insert(tk.END, f"Scraped data from {current_url}\n"))
+                    root.after(0, verbose_output.see, tk.END)
                 
                 # Update progress bar and statistics
                 total_pages += len(new_links)
@@ -195,6 +201,8 @@ def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
                 root.update_idletasks()
 
             except requests.exceptions.RequestException as e:
+                root.after(0, lambda: verbose_output.insert(tk.END, f"Failed to retrieve {current_url}: {e}\n"))
+                root.after(0, verbose_output.see, tk.END)
                 logging.error(f"Failed to retrieve {current_url}: {e}")
             finally:
                 if response is not None:
@@ -241,8 +249,6 @@ def _scrape_data_thread():
 
     # Flash the PayPal button 10 times when done
     flash_paypal_button()
-
-
 
 def display_data(data):
     if not data:
@@ -310,8 +316,8 @@ def copy_to_clipboard(event):
 
 def stop_scan():
     stop_scan_flag.set()  # Signal threads to stop
-    verbose_output.insert(tk.END, "Stop button pressed, stopping scan...\n")
-    verbose_output.see(tk.END)
+    root.after(0, lambda: verbose_output.insert(tk.END, "Stop button pressed, stopping scan...\n"))
+    root.after(0, verbose_output.see, tk.END)
 
 def clear_results():
     for i in tree.get_children():
