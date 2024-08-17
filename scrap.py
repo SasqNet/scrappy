@@ -34,7 +34,6 @@ def flash_paypal_button(count=10):
         current_color = donate_button.cget("bg")
         new_color = "red" if current_color == "gold" else "gold"
         donate_button.config(bg=new_color)
-        # Schedule the next flash
         root.after(300, flash_paypal_button, count - 1)
 
 # Global flag to control stopping of the scan
@@ -55,6 +54,7 @@ HEADERS = {
 EMAIL_REGEX = re.compile(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+')
 PHONE_REGEX = re.compile(r'\+?\d[\d\s.-]{7,14}\d')
 
+# Function to load and parse robots.txt
 def load_robots_txt(url):
     parsed_url = urlparse(url)
     robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
@@ -72,11 +72,13 @@ def load_robots_txt(url):
         rp = None
     return rp
 
+# Function to check if a URL can be fetched based on robots.txt
 def can_fetch_url(rp, url):
     if rp is None:
         return True  # If robots.txt could not be loaded, assume it's safe to fetch
     return rp.can_fetch(HEADERS['User-Agent'], url)
 
+# Function to scrape a single page
 def scrape_page(url, tags, classes, attribute, rp):
     if stop_scan_flag.is_set() or (rp and not can_fetch_url(rp, url)):
         return []
@@ -132,8 +134,15 @@ def scrape_page(url, tags, classes, attribute, rp):
                         if attr_value:
                             data.append({'URL': url, 'Content': attr_value})
 
-        root.after(0, lambda: verbose_output.insert(tk.END, f"Scraped data from {url}\n"))
-        root.after(0, verbose_output.see, tk.END)
+        # Scraping images if requested
+        if scrape_images_var.get() == 1:
+            images = soup.find_all("img")
+            for img in images:
+                src = img.get("src")
+                if src:
+                    full_src = urljoin(url, src)
+                    data.append({'URL': url, 'Content': full_src})
+
         return data
 
     finally:
@@ -141,6 +150,7 @@ def scrape_page(url, tags, classes, attribute, rp):
         del response, soup
         gc.collect()  # Trigger garbage collection
 
+# Function to get internal links from a page
 def get_internal_links(url, soup, base_domain):
     links = set()
     for a_tag in soup.find_all('a', href=True):
@@ -153,19 +163,20 @@ def get_internal_links(url, soup, base_domain):
             links.add(normalized_link)
     return links
 
+# Function to normalize URL
 def normalize_url(url):
-    # Normalize URL to remove fragments and trailing slashes
     parsed_url = urlparse(url)
     cleaned_url, _ = urldefrag(parsed_url.geturl())
     return cleaned_url.lower().rstrip('/')
 
+# Function to crawl the site and scrape data
 def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
     base_domain = urlparse(url).netloc
     visited = set()
     to_visit = set([normalize_url(url)])
-    all_links = set()  # This will store all the links found during crawling
-    all_data = []  # This will store all the data scraped if crawl_links_only is False
-    total_pages = len(to_visit)  # Initial number of pages to visit
+    all_links = set()
+    all_data = []
+    total_pages = len(to_visit)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         while to_visit:
@@ -174,7 +185,7 @@ def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
                 continue
             visited.add(current_url)
 
-            response = None  # Ensure response is defined
+            response = None
             try:
                 response = requests.get(current_url, headers=HEADERS, timeout=10)
                 response.raise_for_status()
@@ -184,95 +195,89 @@ def crawl_site(url, tags, classes, attribute, crawl_links_only=False, rp=None):
                     new_links = get_internal_links(current_url, soup, base_domain)
                     all_links.update(new_links)
                     to_visit.update(new_links)
-                    root.after(0, lambda: verbose_output.insert(tk.END, f"Found links on {current_url}\n"))
-                    root.after(0, verbose_output.see, tk.END)
                 else:
                     page_data = scrape_page(current_url, tags, classes, attribute, rp)
                     all_data.extend(page_data)
                     new_links = get_internal_links(current_url, soup, base_domain)
                     to_visit.update(new_links)
-                    root.after(0, lambda: verbose_output.insert(tk.END, f"Scraped data from {current_url}\n"))
-                    root.after(0, verbose_output.see, tk.END)
                 
-                # Update progress bar and statistics
                 total_pages += len(new_links)
                 progress = len(visited) / total_pages * 100
                 progress_bar['value'] = progress
                 root.update_idletasks()
 
             except requests.exceptions.RequestException as e:
-                root.after(0, lambda: verbose_output.insert(tk.END, f"Failed to retrieve {current_url}: {e}\n"))
-                root.after(0, verbose_output.see, tk.END)
                 logging.error(f"Failed to retrieve {current_url}: {e}")
             finally:
                 if response is not None:
-                    response.close()  # Ensure response is closed only if it was initialized
+                    response.close()
 
     return all_links if crawl_links_only else all_data
 
+# Function to start scraping data
 def scrape_data():
-    stop_scan_flag.clear()  # Reset the flag when starting a new scan
-    progress_bar['value'] = 0  # Reset the progress bar
+    stop_scan_flag.clear()
+    progress_bar['value'] = 0
 
-    # Run the scraping in a separate thread
     thread = threading.Thread(target=_scrape_data_thread)
     thread.start()
 
+# Function to handle scraping in a separate thread
 def _scrape_data_thread():
     url = url_entry.get()
-    tags = [tag.strip() for tag in tags_entry.get().split(",")]
-    classes = [cls.strip() for cls in classes_entry.get().split(",") if cls.strip()]
+    tags = [tag.strip() for tag in tags_combobox.get().split(",")]
+    classes = [cls.strip() for cls in classes_combobox.get().split(",") if cls.strip()]
     attribute = attribute_choice.get()
     crawl_links_only = crawl_links_var.get() == 1
     
     rp = load_robots_var.get() == 1 and load_robots_txt(url) or None
     
-    start_time = time.time()  # Start timing the crawl
-    all_data = []  # Initialize all_data to store results
+    start_time = time.time()
+    all_data = []
 
-    if crawl_option.get() == 1:  # Crawl entire site
+    if crawl_option.get() == 1:
         if crawl_links_only:
             all_links = crawl_site(url, tags, classes, attribute, crawl_links_only=True, rp=rp)
             display_links(all_links)
         else:
             all_data = crawl_site(url, tags, classes, attribute, rp=rp)
             display_data(all_data)
-    else:  # Scrape single page
+    else:
         all_data = scrape_page(url, tags, classes, attribute, rp)
         display_data(all_data)
     
-    end_time = time.time()  # End timing the crawl
+    end_time = time.time()
     elapsed_time = end_time - start_time
 
-    # Update stats
     stats_label.config(text=f"Pages crawled: {len(all_data) if not crawl_links_only else len(all_links)} | Time taken: {elapsed_time:.2f} seconds")
-
-    # Flash the PayPal button 10 times when done
     flash_paypal_button()
 
+    # Reset the progress bar after completion
+    progress_bar['value'] = 0
+
+# Function to display scraped data in the Treeview
 def display_data(data):
     if not data:
         messagebox.showwarning("No Data", "No data found with the specified parameters.")
         return
 
     df = pd.DataFrame(data)
-
-    # Adjust Treeview column width based on the longest content
-    max_content_width = max(df['Content'].apply(len)) * 10 if not df.empty else 100  # Estimate width
+    max_content_width = max(df['Content'].apply(len)) * 10 if not df.empty else 100
     tree.column("Content", width=max_content_width)
 
-    # Display data in the Treeview widget
     for i in tree.get_children():
         tree.delete(i)
     for index, row in df.iterrows():
         tree.insert("", "end", values=(row['URL'], row['Content']))
 
+# Function to display scraped links in the Treeview
 def display_links(links):
     for i in tree.get_children():
         tree.delete(i)
     for link in sorted(links):
         tree.insert("", "end", values=(link, ""))
 
+# Function to export data to CSV, JSON, or Excel
 def export_data(export_format):
     df = scrape_data_for_export()
     if df is not None and not df.empty:
@@ -287,10 +292,11 @@ def export_data(export_format):
                 df.to_excel(file_path, index=False)
             messagebox.showinfo("Success", f"Data exported successfully as {export_format.upper()}.")
 
+# Function to prepare data for export
 def scrape_data_for_export():
     url = url_entry.get()
-    tags = [tag.strip() for tag in tags_entry.get().split(",")]
-    classes = [cls.strip() for cls in classes_entry.get().split(",") if cls.strip()]
+    tags = [tag.strip() for tag in tags_combobox.get().split(",")]
+    classes = [cls.strip() for cls in classes_combobox.get().split(",") if cls.strip()]
     attribute = attribute_choice.get()
     crawl_links_only = crawl_links_var.get() == 1
     
@@ -305,6 +311,7 @@ def scrape_data_for_export():
     else:  # Scrape single page
         return pd.DataFrame(scrape_page(url, tags, classes, attribute, rp))
 
+# Function to copy selected data to the clipboard
 def copy_to_clipboard(event):
     selected_items = tree.selection()
     selected_text = ""
@@ -314,29 +321,32 @@ def copy_to_clipboard(event):
     root.clipboard_clear()
     root.clipboard_append(selected_text)
 
+# Function to stop the scan
 def stop_scan():
     stop_scan_flag.set()  # Signal threads to stop
-    root.after(0, lambda: verbose_output.insert(tk.END, "Stop button pressed, stopping scan...\n"))
-    root.after(0, verbose_output.see, tk.END)
+    verbose_output.insert(tk.END, "Stop button pressed, stopping scan...\n")
+    verbose_output.see(tk.END)
 
+# Function to clear the results
 def clear_results():
     for i in tree.get_children():
         tree.delete(i)
     verbose_output.delete(1.0, tk.END)
     verbose_output.insert(tk.END, "Results cleared.\n")
 
+# Function to open PayPal donation link
 def open_paypal():
-    # Replace with your actual PayPal donation link
     paypal_url = "https://www.paypal.com/donate/?hosted_button_id=VST8PNC48TKX2"
     webbrowser.open(paypal_url)
 
+# Function to update the rate limit label
 def update_rate_limit_label(value):
     rate_limit_label.config(text=f"Rate Limit: {value} seconds")
 
 # Initialize Tkinter
 root = tk.Tk()
 root.title("Advanced Web Scraper")
-root.geometry("1000x700")
+root.geometry("1000x750")
 root.resizable(True, True)
 
 # Define style
@@ -366,15 +376,18 @@ url_entry = ttk.Entry(content_frame, width=50)
 url_entry.grid(row=0, column=1, padx=5, pady=5)
 url_entry.insert(0, "https://www.sasqnet.com")  # Default URL
 
-# HTML Tags Entry
-ttk.Label(content_frame, text="HTML Tags (comma-separated):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-tags_entry = ttk.Entry(content_frame, width=50)
-tags_entry.grid(row=1, column=1, padx=5, pady=5)
+# HTML Tags Entry with common options
+ttk.Label(content_frame, text="HTML Tags:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+common_tags = ["a", "div", "span", "img", "p", "h1", "h2", "h3", "ul", "li", "table"]
+tags_combobox = ttk.Combobox(content_frame, values=common_tags, width=47)
+tags_combobox.grid(row=1, column=1, padx=5, pady=5)
+tags_combobox.set("div")  # Default value
 
-# HTML Classes Entry
-ttk.Label(content_frame, text="HTML Classes (comma-separated):").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-classes_entry = ttk.Entry(content_frame, width=50)
-classes_entry.grid(row=2, column=1, padx=5, pady=5)
+# HTML Classes Entry with common options
+ttk.Label(content_frame, text="HTML Classes:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+common_classes = ["container", "header", "footer", "nav", "content", "article", "section", "title", "text-center"]
+classes_combobox = ttk.Combobox(content_frame, values=common_classes, width=47)
+classes_combobox.grid(row=2, column=1, padx=5, pady=5)
 
 # Attribute Choice Combobox
 ttk.Label(content_frame, text="Attribute to Scrape:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
@@ -391,31 +404,35 @@ ttk.Radiobutton(content_frame, text="Crawl Entire Site", variable=crawl_option, 
 crawl_links_var = tk.IntVar(value=0)
 ttk.Checkbutton(content_frame, text="Crawl Only for Links", variable=crawl_links_var).grid(row=5, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
 
+# Scrape Images Option
+scrape_images_var = tk.IntVar(value=0)
+ttk.Checkbutton(content_frame, text="Scrape Images", variable=scrape_images_var).grid(row=6, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
 # Rate Limit Slider
 rate_limit_label = ttk.Label(content_frame, text=f"Rate Limit: {RATE_LIMIT} seconds")
-rate_limit_label.grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
+rate_limit_label.grid(row=7, column=0, sticky=tk.W, padx=5, pady=5)
 rate_limit_scale = ttk.Scale(content_frame, from_=0.1, to=10.0, orient=tk.HORIZONTAL, command=update_rate_limit_label)
 rate_limit_scale.set(RATE_LIMIT)
-rate_limit_scale.grid(row=6, column=1, padx=5, pady=5)
+rate_limit_scale.grid(row=7, column=1, padx=5, pady=5)
 
 # Respect robots.txt Option
 load_robots_var = tk.IntVar(value=0)
-ttk.Checkbutton(content_frame, text="Respect robots.txt", variable=load_robots_var).grid(row=7, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+ttk.Checkbutton(content_frame, text="Respect robots.txt", variable=load_robots_var).grid(row=8, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
 
 # Email and Phone Number Search Options
 search_emails_var = tk.IntVar(value=0)
-ttk.Checkbutton(content_frame, text="Search for Emails", variable=search_emails_var).grid(row=8, column=0, sticky=tk.W, padx=5, pady=5)
+ttk.Checkbutton(content_frame, text="Search for Emails", variable=search_emails_var).grid(row=9, column=0, sticky=tk.W, padx=5, pady=5)
 
 search_phones_var = tk.IntVar(value=0)
-ttk.Checkbutton(content_frame, text="Search for Phone Numbers", variable=search_phones_var).grid(row=8, column=1, sticky=tk.W, padx=5, pady=5)
+ttk.Checkbutton(content_frame, text="Search for Phone Numbers", variable=search_phones_var).grid(row=9, column=1, sticky=tk.W, padx=5, pady=5)
 
 # Progress Bar
 progress_bar = ttk.Progressbar(content_frame, orient='horizontal', mode='determinate', length=400)
-progress_bar.grid(row=9, column=0, columnspan=2, pady=10)
+progress_bar.grid(row=10, column=0, columnspan=2, pady=10)
 
 # Control Buttons Frame
 button_frame = ttk.Frame(content_frame)
-button_frame.grid(row=10, column=0, columnspan=2, pady=10)
+button_frame.grid(row=11, column=0, columnspan=2, pady=10)
 
 # Control Buttons
 scrape_button = ttk.Button(button_frame, text="Scrape Data", command=scrape_data)
@@ -429,7 +446,7 @@ clear_button.grid(row=0, column=2, padx=5)
 
 # Export Buttons Frame
 export_button_frame = ttk.Frame(content_frame)
-export_button_frame.grid(row=11, column=0, columnspan=2, pady=10)
+export_button_frame.grid(row=12, column=0, columnspan=2, pady=10)
 
 # Export Buttons
 export_csv_button = ttk.Button(export_button_frame, text="Export to CSV", command=lambda: export_data("csv"))
@@ -447,7 +464,7 @@ tree.heading("URL", text="URL")
 tree.heading("Content", text="Scraped Content")
 tree.column("URL", width=300, anchor=tk.W)
 tree.column("Content", width=300, anchor=tk.W)
-tree.grid(row=12, column=0, columnspan=2, padx=5, pady=5, sticky='nsew')
+tree.grid(row=13, column=0, columnspan=2, padx=5, pady=5, sticky='nsew')
 
 # Enable selection and copying from Treeview
 tree.bind("<Control-c>", copy_to_clipboard)
@@ -457,19 +474,19 @@ bold_font = font.Font(weight="bold")
 
 # Text widget for verbose output
 verbose_output = tk.Text(content_frame, height=5, wrap=tk.WORD, bg="black", fg="green", font=bold_font)
-verbose_output.grid(row=13, column=0, columnspan=2, padx=5, pady=5, sticky='nsew')
+verbose_output.grid(row=14, column=0, columnspan=2, padx=5, pady=5, sticky='nsew')
 
 # Add scrollbars
 scrollbar_y = ttk.Scrollbar(content_frame, orient="vertical", command=tree.yview)
-scrollbar_y.grid(row=12, column=2, sticky='ns')
+scrollbar_y.grid(row=13, column=2, sticky='ns')
 tree.configure(yscrollcommand=scrollbar_y.set)
 
 scrollbar_x = ttk.Scrollbar(content_frame, orient="horizontal", command=tree.xview)
-scrollbar_x.grid(row=14, column=0, columnspan=2, sticky='ew')
+scrollbar_x.grid(row=15, column=0, columnspan=2, sticky='ew')
 tree.configure(xscrollcommand=scrollbar_x.set)
 
 # Configure grid weights for resizing
-content_frame.grid_rowconfigure(12, weight=1)
+content_frame.grid_rowconfigure(13, weight=1)
 content_frame.grid_columnconfigure(1, weight=1)
 
 # Create a footer frame
